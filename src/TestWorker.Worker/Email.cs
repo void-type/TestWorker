@@ -1,6 +1,6 @@
 using System;
 
-namespace TestWorker
+namespace TestWorker.Worker
 {
     public class Email
     {

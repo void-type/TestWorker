@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
-namespace TestWorker
+namespace TestWorker.Worker
 {
     public class Emailer
     {
@@ -25,28 +25,19 @@ namespace TestWorker
 
         public void Send(Email email)
         {
-            try
+            if (_random.Next(0, 1000) % 7 == 0)
             {
-                if (_random.Next(0, 1000) % 7 == 0)
-                {
-                    Thread.Sleep(7000);
-                    _logger.LogWarning("Delay in sending: {EmailName}", email.Name);
-                }
-
-                if (_random.Next(0, 1000) % 25 == 0)
-                {
-                    throw new Exception("Sending email exception.");
-                }
-
-                _logger.LogDebug("Sending: {EmailName}", email.Name);
-
-                email.Sent = true;
-                email.SentOn = DateTimeOffset.Now;
+                Thread.Sleep(7000);
+                _logger.LogWarning("Delay in sending: {EmailName}", email.Name);
             }
-            catch
+
+            if (_random.Next(0, 1000) % 25 == 0)
             {
-                _logger.LogCritical("Thrown exception sending: {EmailName}", email.Name);
+                throw new Exception("Sending email exception.");
             }
+
+            email.Sent = true;
+            email.SentOn = DateTimeOffset.Now;
         }
     }
 }

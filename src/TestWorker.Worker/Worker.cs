@@ -4,28 +4,22 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using VoidCore.Domain.Events;
 
-namespace TestWorker
+namespace TestWorker.Worker
 {
     public class Worker : BackgroundService
     {
-        private readonly ILogger<Worker> _logger;
-        private readonly FakeData _data;
-        private readonly Emailer _emailer;
-        private readonly Picker _picker;
         private readonly IConfiguration _workerConfig;
+        private readonly IEventHandler<SendEmail.Request, SendEmail.Response> _eventHandler;
 
         private int LoopDelayMilliseconds => _workerConfig.GetValue<int>("LoopDelayMilliseconds");
         private int LoopsUntilRetry => _workerConfig.GetValue<int>("LoopsUntilRetry");
 
 
-        public Worker(ILogger<Worker> logger, FakeData data, Emailer emailer, Picker picker, IConfiguration config)
+        public Worker(IConfiguration config, SendEmail.Handler eventHandler, SendEmail.Logger eventLogger)
         {
-            _logger = logger;
-            _data = data;
-            _emailer = emailer;
-            _picker = picker;
+            _eventHandler = eventHandler.AddPostProcessor(eventLogger);
             _workerConfig = config.GetSection(nameof(Worker));
         }
 
@@ -33,18 +27,11 @@ namespace TestWorker
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogInformation("Worker running at: {Now}", DateTimeOffset.Now);
-
                 var nextLoop = DateTimeOffset.Now.AddMilliseconds(LoopDelayMilliseconds);
 
-                // Add data
-                AddFakeData(_data);
-
                 // Send
-                var emails = _picker.Pick(_data.Emails, GetRetryPoint());
-                _emailer.Send(emails);
-
-                _logger.LogDebug("Total not sent: {EmailsNotSent}", _data.Emails.Where(n => !n.Sent).ToArray().Count());
+                var request = new SendEmail.Request(GetRetryPoint());
+                await _eventHandler.Handle(request, stoppingToken);
 
                 // Wait until next loop.
                 await DelayUntil(nextLoop, stoppingToken);
@@ -62,27 +49,7 @@ namespace TestWorker
 
             var delayMilliseconds = Math.Max(0, Convert.ToInt32(delaySpan.TotalMilliseconds));
 
-            _logger.LogInformation("Delay: {Delay}", delayMilliseconds);
-
             await Task.Delay(delayMilliseconds, stoppingToken);
-        }
-
-        private void AddFakeData(FakeData data)
-        {
-            for (int i = 0; i < 4; i++)
-            {
-                data.Emails.Add(new Email()
-                {
-                    Name = $"Email {data.Emails.Count() + 1}"
-                });
-            }
-
-            data.Emails.Add(new Email()
-            {
-                Name = $"Email {data.Emails.Count() + 1}",
-                IsScheduled = true,
-                ScheduledToBeSentOn = DateTimeOffset.Now.AddMilliseconds(1 * LoopDelayMilliseconds / 2)
-            });
         }
     }
 }
