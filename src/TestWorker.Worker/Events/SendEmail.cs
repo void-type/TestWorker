@@ -3,21 +3,22 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using TestWorker.Worker.Model;
 using VoidCore.Domain;
 using VoidCore.Domain.Events;
 
-namespace TestWorker.Worker
+namespace TestWorker.Worker.Events
 {
     public class SendEmail
     {
         public class Handler : EventHandlerAbstract<Request, Response>
         {
-            private readonly FakeData _data;
-            private readonly Emailer _emailer;
+            private readonly DataService _data;
+            private readonly EmailerService _emailer;
             private readonly DateTimeOffsetNowService _dateTimeOffsetService;
             private readonly ILogger<Handler> _logger;
 
-            public Handler(FakeData data, Emailer emailer, DateTimeOffsetNowService dateTimeOffsetService, ILogger<Handler> logger)
+            public Handler(DataService data, EmailerService emailer, DateTimeOffsetNowService dateTimeOffsetService, ILogger<Handler> logger)
             {
                 _data = data;
                 _emailer = emailer;
@@ -30,66 +31,72 @@ namespace TestWorker.Worker
                 // Add data
                 AddFakeData(_data);
 
-                var pickedEmails = _data.Emails
+                var pickedJobs = _data.Emails
                    .Where(n =>
                        // Not picked and not scheduled (send immediately)
-                       !n.Picked && !n.IsScheduled ||
+                       !n.IsPicked && !n.IsScheduled ||
                        // Not picked and scheduled time has passed (send when scheduled)
-                       !n.Picked && n.IsScheduled && n.ScheduledToBeSentOn <= _dateTimeOffsetService.Now ||
+                       !n.IsPicked && n.IsScheduled && n.ScheduledFor <= _dateTimeOffsetService.Moment ||
                        // Was picked, but still hasn't been sent after the retry delay (must have not sent)
-                       n.Picked && !n.Sent && n.PickedOn < request.RetryIfPickedBefore)
+                       n.IsPicked && !n.IsComplete && n.PickedOn < request.RetryIfPickedBefore)
                    .ToArray();
 
-                foreach (var email in pickedEmails)
+                foreach (var email in pickedJobs)
                 {
-                    email.Picked = true;
+                    email.IsPicked = true;
                     email.PickedOn = DateTimeOffset.Now;
                 }
 
-                // Save pickedEmails
+                _data.SaveChanges();
 
                 var failed = 0;
                 var sent = 0;
 
-                foreach (var email in pickedEmails)
+                foreach (var job in pickedJobs)
                 {
                     try
                     {
-                        _emailer.Send(email);
-                        email.Sent = true;
-                        email.SentOn = DateTimeOffset.Now;
+                        _emailer.Send(job.Payload);
+                        job.IsComplete = true;
+                        job.CompletedOn = DateTimeOffset.Now;
+                        _data.SaveChanges();
                         sent++;
-                        // Save email
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error sending email: {EmailName}", email.Name);
+                        _logger.LogError(ex, "Error sending email: {EmailName}", job.Payload.Name);
+                        job.IsPicked = false;
+                        _data.SaveChanges();
                         failed++;
                     }
                 }
 
-                var totalNotSent = _data.Emails.Where(n => !n.Sent).Count();
-                var scheduled = _data.Emails.Where(n => !n.Sent && n.IsScheduled).Count();
+                var totalNotSent = _data.Emails.Where(n => !n.IsComplete).Count();
+                var scheduled = _data.Emails.Where(n => !n.IsComplete && n.IsScheduled).Count();
 
-                return Task.FromResult(Ok(new Response(pickedEmails.Count(), failed, sent, totalNotSent, scheduled)));
+                return Task.FromResult(Ok(new Response(pickedJobs.Count(), failed, sent, totalNotSent, scheduled)));
             }
 
-            private void AddFakeData(FakeData data)
+            private void AddFakeData(DataService data)
             {
                 for (int i = 0; i < 4; i++)
                 {
-                    data.Emails.Add(new Email()
-                    {
-                        Name = $"Email {data.Emails.Count() + 1}"
-                    });
+                    data.Emails.Add(
+                        new Job<Email>(
+                            new Email() { Name = $"Email {data.Emails.Count() + 1}" }
+                        )
+                    );
                 }
 
-                data.Emails.Add(new Email()
-                {
-                    Name = $"Email {data.Emails.Count() + 1}",
-                    IsScheduled = true,
-                    ScheduledToBeSentOn = DateTimeOffset.Now.AddMilliseconds(100)
-                });
+                data.Emails.Add(
+                    new Job<Email>(
+                        new Email() { Name = $"Email {data.Emails.Count() + 1}" }
+                    )
+                    {
+                        IsScheduled = true,
+                        ScheduledFor = DateTimeOffset.Now.AddMilliseconds(100)
+                    }
+                );
             }
         }
 

@@ -2,25 +2,17 @@ using System;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
-namespace TestWorker.Worker
+namespace TestWorker.Worker.Model
 {
-    public class Emailer
+    public class EmailerService
     {
-        private readonly ILogger<Emailer> _logger;
+        private readonly ILogger<EmailerService> _logger;
         private readonly Random _random;
 
-        public Emailer(ILogger<Emailer> logger)
+        public EmailerService(ILogger<EmailerService> logger)
         {
             _logger = logger;
             _random = new Random();
-        }
-
-        public void Send(Email[] emails)
-        {
-            foreach (var email in emails)
-            {
-                Send(email);
-            }
         }
 
         public void Send(Email email)
@@ -35,9 +27,6 @@ namespace TestWorker.Worker
             {
                 throw new Exception("Sending email exception.");
             }
-
-            email.Sent = true;
-            email.SentOn = DateTimeOffset.Now;
         }
     }
 }

@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using TestWorker.Worker.Events;
+using TestWorker.Worker.Model;
 
 namespace TestWorker.Worker
 {
@@ -15,8 +17,8 @@ namespace TestWorker.Worker
                 .ConfigureServices((hostContext, services) =>
                 {
                     services.AddHostedService<Worker>();
-                    services.AddSingleton<FakeData>();
-                    services.AddSingleton<Emailer>();
+                    services.AddSingleton<DataService>();
+                    services.AddSingleton<EmailerService>();
                     services.AddSingleton<DateTimeOffsetNowService>();
                     services.AddSingleton<SendEmail.Handler>();
                     services.AddSingleton<SendEmail.Logger>();
